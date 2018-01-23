@@ -53,6 +53,12 @@ else(qibuild_DIR)
 #    DEPENDS Eigen3
   )
 
+  FIND_PACKAGE(OpenCV REQUIRED)
+  INCLUDE_DIRECTORIES(${OpenCV_INCLUDE_DIRS})
+
+  message("OpenCV version: ${OPENCV_VERSION_MAJOR}.${OPENCV_VERSION_MINOR}.${OPENCV_VERSION_PATCH}")
+
+
   # Find Eigen3
   FIND_PACKAGE(Eigen3 REQUIRED)
   INCLUDE_DIRECTORIES(${EIGEN3_INCLUDE_DIR})
@@ -81,6 +87,9 @@ else(qibuild_DIR)
     ./src/srrg_path_map/dijkstra_path_search.cpp
     ./src/srrg_path_map/path_map.cpp
     ./ros/srrg_ros_wrappers/ros_utils.cpp
+    ./src/srrg_planner2d/motion_controller.cpp
+    ./src/srrg_planner2d/dynamic_map.cpp
+    ./src/srrg_planner2d/planner.cpp
   )
 
   add_dependencies(srrg_ros 
@@ -90,6 +99,7 @@ else(qibuild_DIR)
 
   target_link_libraries(srrg_ros
     ${catkin_LIBRARIES}
+    ${OpenCV_LIBS}
   )
 
 
@@ -101,13 +111,9 @@ else(qibuild_DIR)
   )
 
   add_executable(spqrel_planner_node
-    ros/spqrel_planner/src/planner.cpp
     ros/spqrel_planner/src/ros_planner.cpp
     ros/spqrel_planner/src/ros_planner_node.cpp
-    ros/spqrel_planner/src/dynamic_map.cpp
   )
-
-
 
   ## Add cmake target dependencies of the executable
   ## same as for the library above
@@ -137,7 +143,7 @@ else(qibuild_DIR)
     ${catkin_LIBRARIES}
     ${OpenCV_LIBS} 
   )
-
+  
   ###############
   
   # DISABLED until it actually compiles:
