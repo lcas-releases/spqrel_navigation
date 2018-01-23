@@ -2,12 +2,12 @@
 
 #include "yaml_parser/simple_yaml_parser.h"
 
-#include "dynamic_map.h"
+#include "srrg_planner2d/dynamic_map.h"
 
 #include <libgen.h> 
-
 #include <thread>
 #include <atomic>
+#include <boost/thread/mutex.hpp>
 
 #include "srrg_path_map/path_map_utils.h"
 #include "srrg_path_map/distance_map_path_search.h"
@@ -17,7 +17,8 @@
 namespace spqrel_navigation {
 
   using namespace srrg_core;
-
+  using namespace srrg_planner;
+  
   enum WhatToShow {Map, Distance, Cost};
  
   class Planner {
@@ -46,20 +47,31 @@ namespace spqrel_navigation {
 
     //! sets a map from an image
     void setMapFromImage(UnsignedCharImage& map_image, float map_resolution,
-        Eigen::Vector3f map_origin, int occ_threshold, int free_threshold);
+        Eigen::Vector3f map_origin, float occ_threshold, float free_threshold);
 
     void initGUI();
 
     inline void setRobotPose(Eigen::Vector3f robot_pose) {
+        _mtx_display.lock();
         _robot_pose=robot_pose;
+        _mtx_display.unlock();
     }
 
     inline void setLaserPoints(Vector2fVector laser_points) {
+        _mtx_display.lock();
         _laser_points = laser_points;
+        _mtx_display.unlock();
     }
  
     void setGoal(Eigen::Vector3f vgoal);
     void cancelGoal();
+    inline bool haveGoal() { return _have_goal; }
+
+    void reset(); // reset all data structures 
+    void plannerStep();
+
+    float _linear_vel, _angular_vel;
+    std::string _result;
 
   protected:
 
@@ -98,11 +110,12 @@ namespace spqrel_navigation {
 
     float _usable_range;
     bool _restart;
-    void reset();
     
     bool _have_goal;
-    Eigen::Vector2i _goal;
+    Eigen::Vector2i _goal; // goal: image coords
+    Eigen::Vector3f _goal_w; // goal: world coords
     Eigen::Vector3f _robot_pose;
+    Eigen::Vector3f _robot_pose_image_m;
     Eigen::Vector2i _robot_pose_image;
     
     Eigen::Vector3f _map_origin;    //< world coordinates of the bottom left pixel 
@@ -121,31 +134,20 @@ namespace spqrel_navigation {
     float _safety_region;
 
     //! Execution monitoring
+
     std::thread _servicesMonitorThread;
     void servicesMonitorThread();
     std::atomic<bool> _stop_thread;
     float _cycle_time_ms; 
 
-/*
-    // subscribers and publishers
-    qi::AnyObject _subscriber_goal;
-    qi::SignalLink _signal_goal_id;
-    void onGoal(qi::AnyValue value);
-    qi::AnyObject _subscriber_move_enabled;
-    qi::SignalLink _signal_move_enabled_id;
-    void onMoveEnabled(qi::AnyValue value);
-    qi::AnyObject _subscriber_collision_protection_desired;
-    qi::SignalLink _signal_collision_protection_desired_id;
-    void onCollisionProtectionDesired(qi::AnyValue value);
-    qi::AnyObject _subscriber_reset;
-    qi::SignalLink _signal_reset_id;
-*/
     void publishPath();
     void publishGoalReached();
+    void publishGoalFailed();
 
     //! GUI stuff
     bool _use_gui;
     WhatToShow _what_to_show;
+    boost::mutex _mtx_display;
     static void onMouse( int event, int x, int y, int, void* v);
     void handleGUIInput();
     void handleGUIDisplay();
