@@ -2,7 +2,6 @@
 
 #include "yaml_parser/simple_yaml_parser.h"
 #include "naoqi_sensor_utils/naoqi_sensor_utils.h"
-#include "dynamic_map.h"
 
 #include <libgen.h> 
 
@@ -14,12 +13,26 @@
 #include "srrg_path_map/distance_map_path_search.h"
 #include "srrg_path_map/dijkstra_path_search.h"
 
+#include "srrg_planner2d/dynamic_map.h"
 
+
+/**
+ Summary NAOqiPlanner Keys:
+ - NAOqiPlanner/Goal: Goal is set in (x,y) meters coordinates wrt yaml file origin
+ - NAOqiPlanner/Path: Path as a sequence of pixels (x,y)
+ - NAOqiPlanner/Status: If goal is set, contains {WaitingForGoal, PathFound, PathNotFound, GoalReached}
+ - NAOqiPlanner/ExecutionStatus: If goal is set, contains distance remaining to goal in m
+ - NAOqiPlanner/MoveEnabled: True or false to apply or not velocity commands to the robot
+ - NAOqiPlanner/CollisionProtectionDesired: True or false to enable/disable Pepper self collision avoidance
+ - NAOqiPlanner/Reset: Cancels goal and clears dynamic obstacles
+ **/
 namespace naoqi_planner {
   using namespace srrg_core;
-
+  using namespace srrg_planner;
+  
   enum WhatToShow {Map, Distance, Cost};
- 
+  enum State {WaitingForGoal, GoalReceived, PathFound, PathNotFound, GoalReached};
+
   class NAOqiPlanner {
   public:
     EIGEN_MAKE_ALIGNED_OPERATOR_NEW
@@ -67,20 +80,27 @@ namespace naoqi_planner {
     UnsignedCharImage _map_image;
     IntImage _indices_image; 
     FloatImage _distance_image;
-    FloatImage _cost_image;
+    FloatImage _cost_image, _cost_image_backup;
     PathMap _distance_map;
     std::vector<PathMap::CellType, PathMap::AllocatorType> _distance_map_backup;
-    PathMap _path_map;
+    PathMap _path_map, _path_map_backup;
     DistanceMapPathSearch _dmap_calculator;
     DijkstraPathSearch _path_calculator;
     int _max_distance_map_index;
     
-    Vector2iVector _path;
+    Vector2iVector _path, _nominal_path, _obstacle_path;
     bool _move_enabled;
     bool _collision_protection_enabled, _collision_protection_desired;
+    void computePath(FloatImage& cost_map, PathMap& path_map, Eigen::Vector2i& goal, Vector2iVector &path);
     void computeControlToWaypoint(float& v, float& w);
     float _prev_v, _prev_w;
 
+    //Recovery procedures
+    void recoveryPlan();
+    void recoveryRelocalize();
+    std::chrono::steady_clock::time_point _time_last_reloc;
+
+    
     Vector2fVector _laser_points;
     DynamicMap _dyn_map;
 
@@ -115,6 +135,8 @@ namespace naoqi_planner {
     std::atomic<bool> _stop_thread;
     float _cycle_time_ms; 
     void cancelGoal();
+    State _state;
+    inline void setState(State state) {_state = state;};
 
     // subscribers and publishers
     qi::AnyObject _subscriber_goal;
@@ -129,7 +151,7 @@ namespace naoqi_planner {
     qi::AnyObject _subscriber_reset;
     qi::SignalLink _signal_reset_id;
     void publishPath();
-    void publishGoalReached();
+    void publishState();
 
     //! GUI stuff
     bool _use_gui;
